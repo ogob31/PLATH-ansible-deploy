@@ -1,0 +1,5 @@
+*.pem
+*.retry
+*.log
+.env
+.vault_pass.txt

@@ -1,0 +1,53 @@
+---
+- name: Ensure deploy group exists
+  ansible.builtin.group:
+    name: deploy
+    state: present
+
+- name: Ensure deploy user exists
+  ansible.builtin.user:
+    name: deployuser
+    group: deploy
+    create_home: true
+    shell: /bin/bash
+    state: present
+
+- name: Ensure required packages are installed
+  ansible.builtin.package:
+    name:
+      - docker
+    state: present
+
+- name: Ensure Docker service is enabled and running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add deploy user to docker group
+  ansible.builtin.user:
+    name: deployuser
+    groups: docker
+    append: true
+
+- name: Pull nginx image
+  ansible.builtin.command: docker pull nginx:latest
+  changed_when: true
+
+- name: Remove existing nginx container if present
+  ansible.builtin.command: docker rm -f demo_nginx
+  register: remove_container
+  failed_when: false
+  changed_when: remove_container.rc == 0
+
+- name: Run nginx container
+  ansible.builtin.command: >
+    docker run -d --name demo_nginx
+    --restart unless-stopped
+    -p 80:80
+    nginx:latest
+  changed_when: true
+
+- name: Show secure message
+  ansible.builtin.debug:
+    msg: "{{ app_message }}"
