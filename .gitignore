@@ -5,3 +5,10 @@
 *.retry
 .vault_pass.txt
 
+# build artifacts
+*.tar
+*.deb
+
+# system
+*.log
+*.tmp
