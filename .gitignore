@@ -1,5 +1,7 @@
 *.pem
-*.retry
+*.tar
+*.deb
 *.log
-.env
+*.retry
 .vault_pass.txt
+

@@ -1,0 +1,84 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME    = "plath-custom-app"
+        IMAGE_TAG   = "latest"
+        TAR_FILE    = "plath-custom-app.tar"
+        REMOTE_HOST = "44.200.137.218"
+        REMOTE_USER = "ec2-user"
+        SSH_KEY     = "/var/jenkins_home/.ssh/ansideplo.pem"
+        VAULT_FILE  = "/var/jenkins_home/.vault_pass.txt"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    credentialsId: 'github_cred',
+                    url: 'https://github.com/ogob31/PLATH-ansible-deploy.git'
+            }
+        }
+
+        stage('Build Image') {
+            steps {
+                sh '''
+                docker build -t ${APP_NAME}:${IMAGE_TAG} .
+                '''
+            }
+        }
+
+        stage('Save Image') {
+            steps {
+                sh '''
+                docker save ${APP_NAME}:${IMAGE_TAG} -o ${TAR_FILE}
+                '''
+            }
+        }
+
+        stage('Copy Image to Server') {
+            steps {
+                sh '''
+                scp -i ${SSH_KEY} -o StrictHostKeyChecking=no ${TAR_FILE} ${REMOTE_USER}@${REMOTE_HOST}:/home/${REMOTE_USER}/
+                '''
+            }
+        }
+
+        stage('Load Image on Server') {
+            steps {
+                sh '''
+                ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} "sudo docker load -i /home/${REMOTE_USER}/${TAR_FILE}"
+                '''
+            }
+        }
+
+        stage('Deploy with Ansible') {
+            steps {
+                sh '''
+                ansible-playbook -i inventory.jenkins.ini site.yml --vault-password-file ${VAULT_FILE}
+                '''
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sh '''
+                sleep 10
+                curl -f http://${REMOTE_HOST}
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment completed successfully.'
+        }
+        failure {
+            echo 'Pipeline failed. Check console output.'
+        }
+        always {
+            sh 'rm -f ${TAR_FILE} || true'
+        }
+    }
+}
