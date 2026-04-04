@@ -1,4 +1,8 @@
 ---
+- name: Show secure message
+  ansible.builtin.debug:
+    msg: "{{ app_message }}"
+
 - name: Ensure deploy group exists
   ansible.builtin.group:
     name: deploy
@@ -30,24 +34,22 @@
     groups: docker
     append: true
 
-- name: Pull nginx image
-  ansible.builtin.command: docker pull nginx:latest
-  changed_when: true
-
-- name: Remove existing nginx container if present
-  ansible.builtin.command: docker rm -f demo_nginx
+- name: Remove existing container if present
+  ansible.builtin.command: docker rm -f plath_custom_app
   register: remove_container
   failed_when: false
   changed_when: remove_container.rc == 0
 
-- name: Run nginx container
+- name: Remove old demo nginx container if present
+  ansible.builtin.command: docker rm -f demo_nginx
+  register: remove_demo_nginx
+  failed_when: false
+  changed_when: remove_demo_nginx.rc == 0
+
+- name: Run custom application container
   ansible.builtin.command: >
-    docker run -d --name demo_nginx
+    docker run -d --name plath_custom_app
     --restart unless-stopped
     -p 80:80
-    nginx:latest
+    plath-custom-app:latest
   changed_when: true
-
-- name: Show secure message
-  ansible.builtin.debug:
-    msg: "{{ app_message }}"
