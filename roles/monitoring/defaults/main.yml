@@ -1,0 +1,4 @@
+---
+node_exporter_version: "1.7.0"
+prometheus_image: "prom/prometheus:latest"
+grafana_image: "grafana/grafana:latest"
