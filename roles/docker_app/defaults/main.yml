@@ -1,3 +1,3 @@
 ---
-app_image: "nginx:latest"
+app_image: "george524/plath_custom_app:latest"
 app_message: "Deployment starting....."
