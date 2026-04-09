@@ -2,16 +2,15 @@ pipeline {
     agent any
 
     environment {
-        APP_NAME    = "plath-custom-app"
-        IMAGE_TAG   = "latest"
-        TAR_FILE    = "plath-custom-app.tar"
-        REMOTE_HOST = "44.200.137.218"
-        REMOTE_USER = "ec2-user"
-        SSH_KEY     = "/var/jenkins_home/.ssh/ansideplo.pem"
-        VAULT_FILE  = "/var/jenkins_home/.vault_pass.txt"
+        DOCKER_IMAGE = "george524/plath-custom-app:latest"
+        REMOTE_HOST  = "34.205.203.157"
+        REMOTE_USER  = "ec2-user"
+        SSH_KEY      = "/var/jenkins_home/.ssh/ansideplo.pem"
+        VAULT_FILE   = "/var/jenkins_home/.vault_pass.txt"
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 git branch: 'main',
@@ -22,32 +21,44 @@ pipeline {
 
         stage('Build Image') {
             steps {
+                sh 'docker build -t ${DOCKER_IMAGE} .'
+            }
+        }
+
+        stage('Test Image') {
+            steps {
                 sh '''
-                docker build -t ${APP_NAME}:${IMAGE_TAG} .
+                docker rm -f plath-test || true
+                docker run -d --name plath-test -p 8081:80 ${DOCKER_IMAGE}
+                sleep 5
+                curl -f http://localhost:8081
+                docker rm -f plath-test
                 '''
             }
         }
 
-        stage('Save Image') {
+        stage('Login to Docker Hub') {
             steps {
-                sh '''
-                docker save ${APP_NAME}:${IMAGE_TAG} -o ${TAR_FILE}
-                '''
+                withCredentials([usernamePassword(credentialsId: 'dockerhub_cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh 'echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin'
+                }
             }
         }
 
-        stage('Copy Image to Server') {
+        stage('Push Image') {
             steps {
-                sh '''
-                scp -i ${SSH_KEY} -o StrictHostKeyChecking=no ${TAR_FILE} ${REMOTE_USER}@${REMOTE_HOST}:/home/${REMOTE_USER}/
-                '''
+                sh 'docker push ${DOCKER_IMAGE}'
             }
         }
 
-        stage('Load Image on Server') {
+        stage('Backup Current Container') {
             steps {
                 sh '''
-                ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} "sudo docker load -i /home/${REMOTE_USER}/${TAR_FILE}"
+                ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                  if sudo docker ps -a --format "{{.Names}}" | grep -q "^plath_custom_app$"; then
+                    sudo docker commit plath_custom_app george524/plath-custom-app:backup || true
+                  fi
+                '
                 '''
             }
         }
@@ -55,7 +66,8 @@ pipeline {
         stage('Deploy with Ansible') {
             steps {
                 sh '''
-                ansible-playbook -i inventory.jenkins.ini site.yml --vault-password-file ${VAULT_FILE}
+                ansible-playbook -i inventory.jenkins.ini site.yml \
+                --vault-password-file ${VAULT_FILE}
                 '''
             }
         }
@@ -77,20 +89,5 @@ pipeline {
         failure {
             echo 'Pipeline failed. Check console output.'
         }
-        always {
-            sh 'rm -f ${TAR_FILE} || true'
-        }
-    }
-}
-
-stage('Backup Current Container') {
-    steps {
-        sh '''
-        ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-          if sudo docker ps -a --format "{{.Names}}" | grep -q "^plath_custom_app$"; then
-            sudo docker commit plath_custom_app plath-custom-app:backup || true
-          fi
-        '
-        '''
     }
 }
