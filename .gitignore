@@ -8,7 +8,11 @@
 # build artifacts
 *.tar
 *.deb
+*.tar
+*.deb
 
 # system
 *.log
 *.tmp
+
+

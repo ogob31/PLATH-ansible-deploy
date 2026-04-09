@@ -82,3 +82,15 @@ pipeline {
         }
     }
 }
+
+stage('Backup Current Container') {
+    steps {
+        sh '''
+        ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+          if sudo docker ps -a --format "{{.Names}}" | grep -q "^plath_custom_app$"; then
+            sudo docker commit plath_custom_app plath-custom-app:backup || true
+          fi
+        '
+        '''
+    }
+}
