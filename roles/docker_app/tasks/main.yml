@@ -34,17 +34,26 @@
     groups: docker
     append: true
 
-- name: Pull image from Docker Hub
-  command: docker pull george524/plath-custom-app:latest
+- name: Pull target application image
+  ansible.builtin.command: docker pull {{ app_image }}
 
-- name: Remove existing container if present
-  command: docker rm -f plath_custom_app
-  ignore_errors: yes
+- name: Remove old demo nginx container if present
+  ansible.builtin.command: docker rm -f demo_nginx
+  register: remove_demo_nginx
+  failed_when: false
+  changed_when: remove_demo_nginx.rc == 0
+
+- name: Remove existing application container if present
+  ansible.builtin.command: docker rm -f plath_custom_app
+  register: remove_container
+  failed_when: false
+  changed_when: remove_container.rc == 0
 
 - name: Run custom application container
-  command: >
+  ansible.builtin.command: >
     docker run -d
     --name plath_custom_app
     --restart unless-stopped
     -p 80:80
-    george524/plath-custom-app:latest
+    {{ app_image }}
+  changed_when: true

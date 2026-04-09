@@ -1,16 +1,23 @@
 pipeline {
     agent any
 
+    options {
+        disableConcurrentBuilds()
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 40, unit: 'MINUTES')
+    }
+
     environment {
-        DOCKER_IMAGE = "george524/plath-custom-app:latest"
-        REMOTE_HOST  = "34.205.203.157"
-        REMOTE_USER  = "ec2-user"
-        SSH_KEY      = "/var/jenkins_home/.ssh/ansideplo.pem"
-        VAULT_FILE   = "/var/jenkins_home/.vault_pass.txt"
+        DOCKER_IMAGE = 'george524/plath-custom-app'
+        IMAGE_TAG    = "${env.BUILD_NUMBER}"
+        REMOTE_HOST  = '34.205.203.157'
+        REMOTE_USER  = 'ec2-user'
+        SSH_KEY      = '/var/jenkins_home/.ssh/ansideplo.pem'
+        VAULT_FILE   = '/var/jenkins_home/.vault_pass.txt'
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 git branch: 'main',
@@ -19,46 +26,65 @@ pipeline {
             }
         }
 
-        stage('Build Image') {
-            steps {
-                sh 'docker build -t ${DOCKER_IMAGE} .'
-            }
-        }
+      stage('Build Image') {
+    steps {
+        sh '''
+            set -eu
+            docker build \
+              -t ${DOCKER_IMAGE}:${IMAGE_TAG} \
+              -t ${DOCKER_IMAGE}:latest \
+              .
+        '''
+    }
+}
 
         stage('Test Image') {
             steps {
                 sh '''
-                docker rm -f plath-test || true
-                docker run -d --name plath-test -p 8081:80 ${DOCKER_IMAGE}
-                sleep 5
-                curl -f http://localhost:8081
-                docker rm -f plath-test
+                    set -eu
+                    docker rm -f plath-test >/dev/null 2>&1 || true
+                    docker run -d --name plath-test -p 8081:80 ${DOCKER_IMAGE}:${IMAGE_TAG}
+                    sleep 8
+                    curl -fsS --retry 5 --retry-delay 2 http://127.0.0.1:8081/
                 '''
+            }
+            post {
+                always {
+                    sh 'docker rm -f plath-test >/dev/null 2>&1 || true'
+                }
             }
         }
 
         stage('Login to Docker Hub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub_cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin'
+                    sh '''
+                        set -eu
+                        echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                    '''
                 }
             }
         }
 
         stage('Push Image') {
             steps {
-                sh 'docker push ${DOCKER_IMAGE}'
+                sh '''
+                    set -eu
+                    docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
+                    docker push ${DOCKER_IMAGE}:latest
+                '''
             }
         }
 
         stage('Backup Current Container') {
             steps {
                 sh '''
-                ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                  if sudo docker ps -a --format "{{.Names}}" | grep -q "^plath_custom_app$"; then
-                    sudo docker commit plath_custom_app george524/plath-custom-app:backup || true
-                  fi
-                '
+                    set -eu
+                    ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} "
+                        if sudo docker ps -a --format '{{.Names}}' | grep -q '^plath_custom_app$'; then
+                            sudo docker commit plath_custom_app ${DOCKER_IMAGE}:backup-$(date +%Y%m%d%H%M%S) >/dev/null || true
+                        fi
+                    "
                 '''
             }
         }
@@ -66,8 +92,9 @@ pipeline {
         stage('Deploy with Ansible') {
             steps {
                 sh '''
-                ansible-playbook -i inventory.jenkins.ini site.yml \
-                --vault-password-file ${VAULT_FILE}
+                    set -eu
+                    ansible-playbook -i inventory.jenkins.ini site.yml \
+                      --vault-password-file ${VAULT_FILE}
                 '''
             }
         }
@@ -75,8 +102,17 @@ pipeline {
         stage('Health Check') {
             steps {
                 sh '''
-                sleep 10
-                curl -f http://${REMOTE_HOST}
+                    set -eu
+                    for i in $(seq 1 12); do
+                        if curl -fsS http://${REMOTE_HOST}/ >/dev/null; then
+                            echo 'Health check passed.'
+                            exit 0
+                        fi
+                        echo "Waiting for app... attempt ${i}/12"
+                        sleep 5
+                    done
+                    echo 'Health check failed.'
+                    exit 1
                 '''
             }
         }
@@ -88,6 +124,9 @@ pipeline {
         }
         failure {
             echo 'Pipeline failed. Check console output.'
+        }
+        always {
+            sh 'docker logout || true'
         }
     }
 }
