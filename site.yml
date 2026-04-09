@@ -5,3 +5,5 @@
 
   roles:
     - docker_app
+    - monitoring
+
