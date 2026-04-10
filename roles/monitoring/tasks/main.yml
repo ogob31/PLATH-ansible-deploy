@@ -65,3 +65,24 @@
     -p 3000:3000
     {{ grafana_image }}
   changed_when: true
+- name: Create alertmanager config directory
+  ansible.builtin.file:
+    path: /etc/alertmanager
+    state: directory
+    mode: '0755'
+
+- name: Deploy alertmanager config from vault
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /etc/alertmanager/alertmanager.yml
+    mode: '0640'
+
+- name: Run Alertmanager container
+  ansible.builtin.command: >
+    docker run -d
+    --name alertmanager
+    --restart unless-stopped
+    -p 9093:9093
+    -v /etc/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    prom/alertmanager
+  changed_when: true
