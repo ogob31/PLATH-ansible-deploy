@@ -86,3 +86,48 @@
     -v /etc/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
     prom/alertmanager
   changed_when: true
+- name: Remove existing Prometheus container if present
+  ansible.builtin.command: docker rm -f prometheus
+  register: remove_prometheus
+  failed_when: false
+  changed_when: remove_prometheus.rc == 0
+
+- name: Run Prometheus container
+  ansible.builtin.command: >
+    docker run -d
+    --name prometheus
+    --restart unless-stopped
+    -p 9090:9090
+    prom/prometheus:latest
+  changed_when: true
+
+- name: Remove existing Grafana container if present
+  ansible.builtin.command: docker rm -f grafana
+  register: remove_grafana
+  failed_when: false
+  changed_when: remove_grafana.rc == 0
+
+- name: Run Grafana container
+  ansible.builtin.command: >
+    docker run -d
+    --name grafana
+    --restart unless-stopped
+    -p 3000:3000
+    grafana/grafana:latest
+  changed_when: true
+
+- name: Remove existing Alertmanager container if present
+  ansible.builtin.command: docker rm -f alertmanager
+  register: remove_alertmanager
+  failed_when: false
+  changed_when: remove_alertmanager.rc == 0
+
+- name: Run Alertmanager container
+  ansible.builtin.command: >
+    docker run -d
+    --name alertmanager
+    --restart unless-stopped
+    -p 9093:9093
+    -v /etc/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    prom/alertmanager
+  changed_when: true
