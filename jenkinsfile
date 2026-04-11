@@ -93,7 +93,7 @@ pipeline {
                       ${FLASK_IMAGE}:${IMAGE_TAG}
 
                     for i in $(seq 1 12); do
-                        if docker exec flask-test sh -c 'wget -q -O /dev/null http://127.0.0.1:5000/health'; then
+                        if docker exec flask-test sh -c 'curl -fsS http://127.0.0.1:5000/health'; then
                             echo 'Flask smoke test passed.'
                             exit 0
                         fi
