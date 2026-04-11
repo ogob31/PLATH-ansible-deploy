@@ -9,9 +9,10 @@ pipeline {
     }
 
     environment {
-        DOCKER_IMAGE = 'george524/plath-custom-app'
+        NGINX_IMAGE  = 'george524/plath-custom-app'
+        FLASK_IMAGE  = 'george524/magvector-flask'
         IMAGE_TAG    = "${env.BUILD_NUMBER}"
-        REMOTE_HOST  = '34.205.203.157'
+        REMOTE_HOST  = '13.220.34.153'
         REMOTE_USER  = 'ec2-user'
         SSH_KEY      = '/var/jenkins_home/.ssh/ansideplo.pem'
         VAULT_FILE   = '/var/jenkins_home/.vault_pass.txt'
@@ -26,46 +27,92 @@ pipeline {
             }
         }
 
-      stage('Build Image') {
-    steps {
-        sh '''
-            set -eu
-            docker build \
-              -t ${DOCKER_IMAGE}:${IMAGE_TAG} \
-              -t ${DOCKER_IMAGE}:latest \
-              .
-        '''
-    }
-}
-
-      stage('Test Image') {
-    steps {
-        sh '''
-            set -eu
-            docker rm -f plath-test >/dev/null 2>&1 || true
-            docker run -d --name plath-test ${DOCKER_IMAGE}:${IMAGE_TAG}
-
-            for i in $(seq 1 12); do
-                if docker exec plath-test sh -c 'wget -q -O /dev/null http://127.0.0.1:80/'; then
-                    echo 'Smoke test passed.'
-                    exit 0
-                fi
-                echo "Waiting for container app... attempt ${i}/12"
-                sleep 2
-            done
-
-            echo 'Smoke test failed. Container diagnostics:'
-            docker ps -a --filter name=plath-test
-            docker logs plath-test || true
-            exit 1
-        '''
-    }
-    post {
-        always {
-            sh 'docker rm -f plath-test >/dev/null 2>&1 || true'
+        stage('Build Nginx Image') {
+            steps {
+                sh '''
+                    set -eu
+                    docker build \
+                      -t ${NGINX_IMAGE}:${IMAGE_TAG} \
+                      -t ${NGINX_IMAGE}:latest \
+                      .
+                '''
+            }
         }
-    }
-}
+
+        stage('Build Flask Image') {
+            steps {
+                sh '''
+                    set -eu
+                    docker build \
+                      -t ${FLASK_IMAGE}:${IMAGE_TAG} \
+                      -t ${FLASK_IMAGE}:latest \
+                      ./flask-backend
+                '''
+            }
+        }
+
+        stage('Test Nginx Image') {
+            steps {
+                sh '''
+                    set -eu
+                    docker rm -f plath-test >/dev/null 2>&1 || true
+                    docker run -d --name plath-test ${NGINX_IMAGE}:${IMAGE_TAG}
+
+                    for i in $(seq 1 12); do
+                        if docker exec plath-test sh -c 'wget -q -O /dev/null http://127.0.0.1:80/'; then
+                            echo 'Smoke test passed.'
+                            exit 0
+                        fi
+                        echo "Waiting for container app... attempt ${i}/12"
+                        sleep 2
+                    done
+
+                    echo 'Smoke test failed.'
+                    docker logs plath-test || true
+                    exit 1
+                '''
+            }
+            post {
+                always {
+                    sh 'docker rm -f plath-test >/dev/null 2>&1 || true'
+                }
+            }
+        }
+
+        stage('Test Flask Image') {
+            steps {
+                sh '''
+                    set -eu
+                    docker rm -f flask-test >/dev/null 2>&1 || true
+                    docker run -d --name flask-test \
+                      -e DB_HOST=localhost \
+                      -e DB_NAME=test \
+                      -e DB_USER=test \
+                      -e DB_PASSWORD=test \
+                      -e DB_PORT=5432 \
+                      ${FLASK_IMAGE}:${IMAGE_TAG}
+
+                    for i in $(seq 1 12); do
+                        if docker exec flask-test sh -c 'wget -q -O /dev/null http://127.0.0.1:5000/health'; then
+                            echo 'Flask smoke test passed.'
+                            exit 0
+                        fi
+                        echo "Waiting for Flask... attempt ${i}/12"
+                        sleep 2
+                    done
+
+                    echo 'Flask smoke test failed.'
+                    docker logs flask-test || true
+                    exit 1
+                '''
+            }
+            post {
+                always {
+                    sh 'docker rm -f flask-test >/dev/null 2>&1 || true'
+                }
+            }
+        }
+
         stage('Login to Docker Hub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub_cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
@@ -77,12 +124,14 @@ pipeline {
             }
         }
 
-        stage('Push Image') {
+        stage('Push Images') {
             steps {
                 sh '''
                     set -eu
-                    docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
-                    docker push ${DOCKER_IMAGE}:latest
+                    docker push ${NGINX_IMAGE}:${IMAGE_TAG}
+                    docker push ${NGINX_IMAGE}:latest
+                    docker push ${FLASK_IMAGE}:${IMAGE_TAG}
+                    docker push ${FLASK_IMAGE}:latest
                 '''
             }
         }
@@ -93,7 +142,7 @@ pipeline {
                     set -eu
                     ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} "
                         if sudo docker ps -a --format '{{.Names}}' | grep -q '^plath_custom_app$'; then
-                            sudo docker commit plath_custom_app ${DOCKER_IMAGE}:backup-$(date +%Y%m%d%H%M%S) >/dev/null || true
+                            sudo docker commit plath_custom_app ${NGINX_IMAGE}:backup-\$(date +%Y%m%d%H%M%S) >/dev/null || true
                         fi
                     "
                 '''
@@ -116,7 +165,7 @@ pipeline {
                     set -eu
                     for i in $(seq 1 12); do
                         if curl -fsS http://${REMOTE_HOST}/ >/dev/null; then
-                            echo 'Health check passed.'
+                            echo 'Nginx health check passed.'
                             exit 0
                         fi
                         echo "Waiting for app... attempt ${i}/12"
