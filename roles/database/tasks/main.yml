@@ -1,0 +1,100 @@
+---
+- name: Install PostgreSQL and dependencies
+  ansible.builtin.package:
+    name:
+      - postgresql15-server
+      - postgresql15
+      - python3-psycopg2
+    state: present
+
+- name: Initialize PostgreSQL database
+  ansible.builtin.command: /usr/bin/postgresql-setup --initdb
+  args:
+    creates: /var/lib/pgsql/data/PG_VERSION
+
+- name: Start and enable PostgreSQL
+  ansible.builtin.service:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Create application database
+  community.postgresql.postgresql_db:
+    name: "{{ db_name }}"
+    state: present
+  become_user: postgres
+
+- name: Create application database user
+  community.postgresql.postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    state: present
+  become_user: postgres
+
+- name: Grant user privileges on database
+  community.postgresql.postgresql_privs:
+    db: "{{ db_name }}"
+    role: "{{ db_user }}"
+    privs: ALL
+    type: database
+    state: present
+  become_user: postgres
+
+- name: Create contacts table
+  community.postgresql.postgresql_query:
+    db: "{{ db_name }}"
+    query: |
+      CREATE TABLE IF NOT EXISTS contacts (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) NOT NULL,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+  become_user: postgres
+
+- name: Allow PostgreSQL to listen on all interfaces
+  ansible.builtin.lineinfile:
+    path: /var/lib/pgsql/data/postgresql.conf
+    regexp: "^#listen_addresses"
+    line: "listen_addresses = '*'"
+  notify: Restart PostgreSQL
+
+- name: Allow app server to connect to PostgreSQL
+  ansible.builtin.lineinfile:
+    path: /var/lib/pgsql/data/pg_hba.conf
+    line: "host    magvector_db    magvector_user    13.220.34.153/32    md5"
+  notify: Restart PostgreSQL
+
+- name: Allow PostgreSQL to listen on all interfaces
+  ansible.builtin.lineinfile:
+    path: /var/lib/pgsql/data/postgresql.conf
+    regexp: "^#listen_addresses"
+    line: "listen_addresses = '*'"
+  notify: Restart PostgreSQL
+
+- name: Allow app server to connect to PostgreSQL
+  ansible.builtin.lineinfile:
+    path: /var/lib/pgsql/data/pg_hba.conf
+    line: "host    magvector_db    magvector_user    13.220.34.153/32    md5"
+  notify: Restart PostgreSQL
+
+- name: Grant user privileges on contacts table
+  community.postgresql.postgresql_privs:
+    db: "{{ db_name }}"
+    role: "{{ db_user }}"
+    privs: ALL
+    type: table
+    objs: contacts
+    state: present
+  become_user: postgres
+
+- name: Grant user privileges on contacts sequence
+  community.postgresql.postgresql_privs:
+    db: "{{ db_name }}"
+    role: "{{ db_user }}"
+    privs: ALL
+    type: sequence
+    objs: contacts_id_seq
+    state: present
+  become_user: postgres

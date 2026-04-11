@@ -1,0 +1,5 @@
+---
+db_name: magvector_db
+db_user: magvector_user
+db_password: "{{ vault_db_password }}"
+db_port: 5432

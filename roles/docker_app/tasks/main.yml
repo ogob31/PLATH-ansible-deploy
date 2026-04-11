@@ -57,3 +57,25 @@
     -p 80:80
     {{ app_image }}
   changed_when: true
+- name: Pull Flask backend image
+  ansible.builtin.command: docker pull {{ flask_image }}
+
+- name: Remove existing Flask container if present
+  ansible.builtin.command: docker rm -f magvector_flask
+  register: remove_flask
+  failed_when: false
+  changed_when: remove_flask.rc == 0
+
+- name: Run Flask backend container
+  ansible.builtin.command: >
+    docker run -d
+    --name magvector_flask
+    --restart unless-stopped
+    -p 5000:5000
+    -e DB_HOST={{ db_host }}
+    -e DB_NAME={{ db_name }}
+    -e DB_USER={{ db_user }}
+    -e DB_PASSWORD={{ vault_db_password }}
+    -e DB_PORT={{ db_port }}
+    {{ flask_image }}
+  changed_when: true

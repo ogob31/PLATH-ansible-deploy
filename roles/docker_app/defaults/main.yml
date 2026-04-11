@@ -1,3 +1,8 @@
 ---
 app_image: "george524/plath_custom_app:latest"
 app_message: "Deployment starting....."
+flask_image: "george524/magvector-flask:latest"
+db_host: "100.48.191.14"
+db_name: "magvector_db"
+db_user: "magvector_user"
+db_port: "5432"

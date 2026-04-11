@@ -2,8 +2,12 @@
 - name: Deploy containerized application
   hosts: app_servers
   become: true
-
   roles:
     - docker_app
     - monitoring
 
+- name: Deploy database server
+  hosts: db_servers
+  become: true
+  roles:
+    - database
