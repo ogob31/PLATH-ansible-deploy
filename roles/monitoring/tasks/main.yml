@@ -86,7 +86,7 @@
   ansible.builtin.template:
     src: alertmanager.yml.j2
     dest: /etc/alertmanager/alertmanager.yml
-    mode: "0640"
+    mode: "0644"
 
 - name: Remove existing Alertmanager container if present
   ansible.builtin.command: docker rm -f alertmanager
